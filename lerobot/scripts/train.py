@@ -35,16 +35,16 @@ from lerobot.common.envs.factory import make_env
 from lerobot.common.logger import Logger, log_output_dir
 from lerobot.common.optim.factory import load_training_state, make_optimizer_and_scheduler
 from lerobot.common.policies.factory import make_policy
-from lerobot.common.policies.policy_protocol import PolicyWithUpdate
 from lerobot.common.policies.utils import get_device_from_parameters
 from lerobot.common.utils.utils import (
     format_big_number,
     get_safe_torch_device,
+    has_method,
     init_logging,
     set_global_seed,
 )
 from lerobot.configs import parser
-from lerobot.configs.training import TrainPipelineConfig
+from lerobot.configs.train import TrainPipelineConfig
 from lerobot.scripts.eval import eval_policy
 
 
@@ -89,7 +89,7 @@ def update_policy(
     if lr_scheduler is not None:
         lr_scheduler.step()
 
-    if isinstance(policy, PolicyWithUpdate):
+    if has_method(policy, "update"):
         # To possibly update an internal buffer (for instance an Exponential Moving Average like in TDMPC).
         policy.update()
 
@@ -180,7 +180,7 @@ def log_eval_info(logger, info, step, cfg, dataset, is_online):
     logger.log_dict(info, step, mode="eval")
 
 
-@parser.wrap(pathable_args=["policy"])
+@parser.wrap()
 def train(cfg: TrainPipelineConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))
@@ -354,15 +354,17 @@ def train(cfg: TrainPipelineConfig):
         online_buffer_path,
         data_spec={
             **{
-                ft.key: {"shape": ft.shape, "dtype": np.dtype("float32")}
-                for ft in policy.config.input_features
+                key: {"shape": ft.shape, "dtype": np.dtype("float32")}
+                for key, ft in policy.config.input_features.items()
             },
             **{
-                ft.key: {"shape": ft.shape, "dtype": np.dtype("float32")}
-                for ft in policy.config.output_features
+                key: {"shape": ft.shape, "dtype": np.dtype("float32")}
+                for key, ft in policy.config.output_features.items()
             },
             "next.reward": {"shape": (), "dtype": np.dtype("float32")},
             "next.done": {"shape": (), "dtype": np.dtype("?")},
+            "task_index": {"shape": (), "dtype": np.dtype("int64")},
+            # FIXME: 'next.success' is expected by pusht env but not xarm
             "next.success": {"shape": (), "dtype": np.dtype("?")},
         },
         buffer_capacity=cfg.online.buffer_capacity,
@@ -400,12 +402,14 @@ def train(cfg: TrainPipelineConfig):
     )
     dl_iter = cycle(dataloader)
 
-    # Lock and thread pool executor for asynchronous online rollouts. When asynchronous mode is disabled,
-    # these are still used but effectively do nothing.
-    lock = Lock()
-    # Note: 1 worker because we only ever want to run one set of online rollouts at a time. Batch
-    # parallelization of rollouts is handled within the job.
-    executor = ThreadPoolExecutor(max_workers=1)
+    if cfg.online.do_rollout_async:
+        # Lock and thread pool executor for asynchronous online rollouts.
+        lock = Lock()
+        # Note: 1 worker because we only ever want to run one set of online rollouts at a time. Batch
+        # parallelization of rollouts is handled within the job.
+        executor = ThreadPoolExecutor(max_workers=1)
+    else:
+        lock = None
 
     online_step = 0
     online_rollout_s = 0  # time take to do online rollout
@@ -424,10 +428,13 @@ def train(cfg: TrainPipelineConfig):
 
         def sample_trajectory_and_update_buffer():
             nonlocal rollout_start_seed
-            with lock:
+
+            with lock if lock is not None else nullcontext():
                 online_rollout_policy.load_state_dict(policy.state_dict())
+
             online_rollout_policy.eval()
             start_rollout_time = time.perf_counter()
+
             with torch.no_grad():
                 eval_info = eval_policy(
                     online_env,
@@ -440,7 +447,14 @@ def train(cfg: TrainPipelineConfig):
                 )
             online_rollout_s = time.perf_counter() - start_rollout_time
 
-            with lock:
+            if len(offline_dataset.meta.tasks) > 1:
+                raise NotImplementedError("Add support for multi task.")
+
+            # Hack to add a task to the online_dataset (0 is the first task of the offline_dataset)
+            total_num_frames = eval_info["episodes"]["index"].shape[0]
+            eval_info["episodes"]["task_index"] = torch.tensor([0] * total_num_frames, dtype=torch.int64)
+
+            with lock if lock is not None else nullcontext():
                 start_update_buffer_time = time.perf_counter()
                 online_dataset.add_data(eval_info["episodes"])
 
@@ -463,11 +477,14 @@ def train(cfg: TrainPipelineConfig):
 
             return online_rollout_s, update_online_buffer_s
 
-        future = executor.submit(sample_trajectory_and_update_buffer)
-        # If we aren't doing async rollouts, or if we haven't yet gotten enough examples in our buffer, wait
-        # here until the rollout and buffer update is done, before proceeding to the policy update steps.
-        if not cfg.online.do_rollout_async or len(online_dataset) <= cfg.online.buffer_seed_size:
-            online_rollout_s, update_online_buffer_s = future.result()
+        if lock is None:
+            online_rollout_s, update_online_buffer_s = sample_trajectory_and_update_buffer()
+        else:
+            future = executor.submit(sample_trajectory_and_update_buffer)
+            # If we aren't doing async rollouts, or if we haven't yet gotten enough examples in our buffer, wait
+            # here until the rollout and buffer update is done, before proceeding to the policy update steps.
+            if len(online_dataset) <= cfg.online.buffer_seed_size:
+                online_rollout_s, update_online_buffer_s = future.result()
 
         if len(online_dataset) <= cfg.online.buffer_seed_size:
             logging.info(f"Seeding online buffer: {len(online_dataset)}/{cfg.online.buffer_seed_size}")
@@ -475,7 +492,7 @@ def train(cfg: TrainPipelineConfig):
 
         policy.train()
         for _ in range(cfg.online.steps_between_rollouts):
-            with lock:
+            with lock if lock is not None else nullcontext():
                 start_time = time.perf_counter()
                 batch = next(dl_iter)
                 dataloading_s = time.perf_counter() - start_time
@@ -498,7 +515,7 @@ def train(cfg: TrainPipelineConfig):
             train_info["online_rollout_s"] = online_rollout_s
             train_info["update_online_buffer_s"] = update_online_buffer_s
             train_info["await_update_online_buffer_s"] = await_update_online_buffer_s
-            with lock:
+            with lock if lock is not None else nullcontext():
                 train_info["online_buffer_size"] = len(online_dataset)
 
             if step % cfg.log_freq == 0:
@@ -513,7 +530,7 @@ def train(cfg: TrainPipelineConfig):
 
         # If we're doing async rollouts, we should now wait until we've completed them before proceeding
         # to do the next batch of rollouts.
-        if future.running():
+        if cfg.online.do_rollout_async and future.running():
             start = time.perf_counter()
             online_rollout_s, update_online_buffer_s = future.result()
             await_update_online_buffer_s = time.perf_counter() - start

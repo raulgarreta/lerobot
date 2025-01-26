@@ -21,24 +21,29 @@ You want to evaluate a model from the hub (eg: https://huggingface.co/lerobot/di
 for 10 episodes.
 
 ```
-python lerobot/scripts/eval.py -p lerobot/diffusion_pusht eval.n_episodes=10
+python lerobot/scripts/eval.py \
+    --policy.path=lerobot/diffusion_pusht \
+    --env.type=pusht \
+    --eval.batch_size=10 \
+    --eval.n_episodes=10 \
+    --use_amp=false \
+    --device=cuda
 ```
 
 OR, you want to evaluate a model checkpoint from the LeRobot training script for 10 episodes.
-
 ```
 python lerobot/scripts/eval.py \
-    -p outputs/train/diffusion_pusht/checkpoints/005000/pretrained_model \
-    eval.n_episodes=10
+    --policy.path=outputs/train/diffusion_pusht/checkpoints/005000/pretrained_model \
+    --env.type=pusht \
+    --eval.batch_size=10 \
+    --eval.n_episodes=10 \
+    --use_amp=false \
+    --device=cuda
 ```
 
-Note that in both examples, the repo/folder should contain at least `config.json`, `config.yaml` and
-`model.safetensors`.
+Note that in both examples, the repo/folder should contain at least `config.json` and `model.safetensors` files.
 
-Note the formatting for providing the number of episodes. Generally, you may provide any number of arguments
-with `qualified.parameter.name=value`. In this case, the parameter eval.n_episodes appears as `n_episodes`
-nested under `eval` in the `config.yaml` found at
-https://huggingface.co/lerobot/diffusion_pusht/tree/main.
+You can learn about the CLI options for this script in the `EvalPipelineConfig` in lerobot/configs/eval.py
 """
 
 import json
@@ -63,7 +68,7 @@ from lerobot.common.envs.factory import make_env
 from lerobot.common.envs.utils import preprocess_observation
 from lerobot.common.logger import log_output_dir
 from lerobot.common.policies.factory import make_policy
-from lerobot.common.policies.policy_protocol import Policy
+from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.policies.utils import get_device_from_parameters
 from lerobot.common.utils.io_utils import write_video
 from lerobot.common.utils.utils import (
@@ -78,7 +83,7 @@ from lerobot.configs.eval import EvalPipelineConfig
 
 def rollout(
     env: gym.vector.VectorEnv,
-    policy: Policy,
+    policy: PreTrainedPolicy,
     seeds: list[int] | None = None,
     return_observations: bool = False,
     render_callback: Callable[[gym.vector.VectorEnv], None] | None = None,
@@ -205,7 +210,7 @@ def rollout(
 
 def eval_policy(
     env: gym.vector.VectorEnv,
-    policy: torch.nn.Module,
+    policy: PreTrainedPolicy,
     n_episodes: int,
     max_episodes_rendered: int = 0,
     videos_dir: Path | None = None,
@@ -229,7 +234,7 @@ def eval_policy(
     if max_episodes_rendered > 0 and not videos_dir:
         raise ValueError("If max_episodes_rendered > 0, videos_dir must be provided.")
 
-    assert isinstance(policy, Policy)
+    assert isinstance(policy, PreTrainedPolicy)
     start = time.time()
     policy.eval()
 
@@ -439,7 +444,7 @@ def _compile_episode_data(
     return data_dict
 
 
-@parser.wrap(pathable_args=["policy"])
+@parser.wrap()
 def eval(cfg: EvalPipelineConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))
