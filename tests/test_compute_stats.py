@@ -22,7 +22,7 @@ from tests.fixtures.constants import DUMMY_REPO_ID
 
 
 @pytest.fixture
-def empty_dataset(tmp_path):
+def empty_state_dataset(tmp_path):
     features = {
         "state": {
             "dtype": "float32",
@@ -34,20 +34,53 @@ def empty_dataset(tmp_path):
     return dataset
 
 
-def test_compute_episode_stats_one_state(empty_dataset):
-    ds = empty_dataset
+@pytest.fixture
+def empty_image_dataset(tmp_path):
+    features = {
+        "image": {
+            "dtype": "video",
+            "shape": (3, 96, 128),
+            "names": [
+                "channels",
+                "height",
+                "width",
+            ],
+        },
+    }
+    dataset = LeRobotDataset.create(repo_id=DUMMY_REPO_ID, fps=30, features=features, root=tmp_path / "dummy")
+    return dataset
+
+
+# TODO: simplify these tests by using `compute_episode_stats` instead of `save_episode`
+def test_compute_episode_stats_one_state(empty_state_dataset):
+    ds = empty_state_dataset
     ds.add_frame({"state": torch.tensor([1, 2])})
     ds.save_episode(task="lol")
     # stats = compute_episode_stats(ds.episode_buffer, ds.features)
     # TODO: assert state min, max, mean, std
 
 
-def test_compute_episode_stats_two_states(empty_dataset):
-    ds = empty_dataset
+def test_compute_episode_stats_two_states(empty_state_dataset):
+    ds = empty_state_dataset
     ds.add_frame({"state": torch.tensor([1, 2])})
     ds.add_frame({"state": torch.tensor([4, 5])})
     ds.save_episode(task="lol")
     # stats = compute_episode_stats(ds.episode_buffer, ds.features)
+    # TODO: assert state min, max, mean, std
+
+
+def test_compute_episode_stats_one_image(empty_image_dataset):
+    ds = empty_image_dataset
+    ds.add_frame({"image": torch.ones(3, 96, 128)})
+    ds.save_episode(task="lol")
+    # TODO: assert state min, max, mean, std
+
+
+def test_compute_episode_stats_two_images(empty_image_dataset):
+    ds = empty_image_dataset
+    ds.add_frame({"image": torch.ones(3, 96, 128)})
+    ds.add_frame({"image": torch.ones(3, 96, 128) * 0.5})
+    ds.save_episode(task="lol")
     # TODO: assert state min, max, mean, std
 
 

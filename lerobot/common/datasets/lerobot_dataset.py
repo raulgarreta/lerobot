@@ -728,11 +728,13 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if self.episode_buffer is None:
             self.episode_buffer = self.create_episode_buffer()
 
+        # Automatically add frame_index and timestamp to episode buffer
         frame_index = self.episode_buffer["size"]
         timestamp = frame.pop("timestamp") if "timestamp" in frame else frame_index / self.fps
         self.episode_buffer["frame_index"].append(frame_index)
         self.episode_buffer["timestamp"].append(timestamp)
 
+        # Add frame features to episode_buffer
         for key in frame:
             if key not in self.features:
                 raise ValueError(key)
@@ -740,6 +742,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             if self.features[key]["dtype"] not in ["image", "video"]:
                 item = frame[key].numpy() if isinstance(frame[key], torch.Tensor) else frame[key]
                 self.episode_buffer[key].append(item)
+
             elif self.features[key]["dtype"] in ["image", "video"]:
                 img_path = self._get_image_file_path(
                     episode_index=self.episode_buffer["episode_index"], image_key=key, frame_index=frame_index
@@ -824,8 +827,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return episode_buffer, episode_index, episode_length, task_index
 
     def _compute_episode_stats(self, episode_buffer: dict):
-        image_sampling = int(self.fps / 2)  # sample 2 img/s for the stats
-        ep_stats = compute_episode_stats(episode_buffer, self.features, image_sampling=image_sampling)
+        ep_stats = compute_episode_stats(episode_buffer, self.features)
         return serialize_dict(ep_stats)
 
     def _save_episode_table(self, episode_buffer: dict, episode_index: int) -> None:

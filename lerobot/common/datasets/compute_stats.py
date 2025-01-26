@@ -19,11 +19,11 @@ import torch
 from lerobot.common.datasets.utils import load_image_as_numpy
 
 
-def compute_episode_stats(episode_buffer: dict, features: dict, image_sampling: int = 10) -> dict:
+def compute_episode_stats(episode_buffer: dict, features: dict, num_image_samples: int | None = None) -> dict:
     stats = {}
     for key, data in episode_buffer.items():
         if features[key]["dtype"] in ["image", "video"]:
-            stats[key] = compute_image_stats(data, sampling=image_sampling)
+            stats[key] = compute_image_stats(data, num_samples=num_image_samples)
         else:
             axes_to_reduce = 0  # Compute stats over the first axis
             stats[key] = {
@@ -36,10 +36,30 @@ def compute_episode_stats(episode_buffer: dict, features: dict, image_sampling: 
     return stats
 
 
-def compute_image_stats(image_paths: list[str], sampling: int = 10) -> dict:
+def estimate_num_samples(dataset_len: int, min_num_samples=100, max_num_samples=10_000, power=0.75) -> int:
+    """Heuristic to estimate the number of samples based on dataset size.
+    The power controls the sample growth relative to dataset sizelower the power for less number of samples.
+
+    For default arguments, we have:
+    - from 1 to ~500, num_samples=100
+    - at 1000, num_samples=178
+    - at 2000, num_samples=299
+    - at 5000, num_samples=594
+    - at 10000, num_samples=1000
+    - at 20000, num_samples=1681
+    """
+    return max(min_num_samples, min(dataset_len**power, max_num_samples))
+
+
+def compute_image_stats(image_paths: list[str], num_samples: int | None = None) -> dict:
+    num_samples = estimate_num_samples(len(image_paths)) if num_samples is None else num_samples
+    num_samples = min(num_samples, len(image_paths))
+
+    step_size = len(image_paths) / num_samples
+    sampled_indices = np.arange(0, len(image_paths), step_size).astype(int).tolist()
+
     images = []
-    samples = range(0, len(image_paths), sampling)
-    for idx in samples:
+    for idx in sampled_indices:
         path = image_paths[idx]
         img = load_image_as_numpy(path, channel_first=True)
         images.append(img)
