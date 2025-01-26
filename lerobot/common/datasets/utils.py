@@ -163,6 +163,10 @@ def append_jsonlines(data: dict, fpath: Path) -> None:
         writer.write(data)
 
 
+def write_info(info: dict, local_dir: Path):
+    write_json(info, local_dir / INFO_PATH)
+
+
 def load_info(local_dir: Path) -> dict:
     info = load_json(local_dir / INFO_PATH)
     for ft in info["features"].values():
@@ -170,12 +174,29 @@ def load_info(local_dir: Path) -> dict:
     return info
 
 
+def write_stats(stats: dict, local_dir: Path):
+    serialized_stats = serialize_dict(stats)
+    write_json(serialized_stats, local_dir / STATS_PATH)
+
+
+def cast_stats_to_numpy(stats):
+    stats = {key: np.array(value) for key, value in flatten_dict(stats).items()}
+    return unflatten_dict(stats)
+
+
 def load_stats(local_dir: Path) -> dict:
     if not (local_dir / STATS_PATH).exists():
         return None
     stats = load_json(local_dir / STATS_PATH)
-    stats = {key: np.array(value) for key, value in flatten_dict(stats).items()}
-    return unflatten_dict(stats)
+    return cast_stats_to_numpy(stats)
+
+
+def write_task(task_index: int, task: dict, local_dir: Path):
+    task_dict = {
+        "task_index": task_index,
+        "task": task,
+    }
+    append_jsonlines(task_dict, local_dir / TASKS_PATH)
 
 
 def load_tasks(local_dir: Path) -> dict:
@@ -183,21 +204,32 @@ def load_tasks(local_dir: Path) -> dict:
     return {item["task_index"]: item["task"] for item in sorted(tasks, key=lambda x: x["task_index"])}
 
 
+def write_episode(episode: dict, local_dir: Path):
+    append_jsonlines(episode, local_dir / EPISODES_PATH)
+
+
 def load_episodes(local_dir: Path) -> dict:
     episodes = load_jsonlines(local_dir / EPISODES_PATH)
     return {item["episode_index"]: item for item in sorted(episodes, key=lambda x: x["episode_index"])}
 
 
+def write_episode_stats(episode_index: int, episode_stats: dict, local_dir: Path):
+    # We wrap episode_stats in a dictionnary since `episode_stats["episode_index"]`
+    # is a dictionary of stats and not an integer.
+    episode_stats = {"episode_index": episode_index, "stats": serialize_dict(episode_stats)}
+    append_jsonlines(episode_stats, local_dir / EPISODES_STATS_PATH)
+
+
 def load_episodes_stats(local_dir: Path) -> dict:
-    episodes_tasks = load_jsonlines(local_dir / EPISODES_STATS_PATH)
+    episodes_stats = load_jsonlines(local_dir / EPISODES_STATS_PATH)
     return {
-        item["episode_index"]: item["stats"]
-        for item in sorted(episodes_tasks, key=lambda x: x["episode_index"])
+        item["episode_index"]: cast_stats_to_numpy(item["stats"])
+        for item in sorted(episodes_stats, key=lambda x: x["episode_index"])
     }
 
 
 def backward_compatible_episodes_stats(stats, episodes: list[int]):
-    return {ep_idx: {"episode_index": ep_idx, "stats": stats} for ep_idx in episodes}
+    return {ep_idx: stats for ep_idx in episodes}
 
 
 def load_image_as_numpy(fpath: str | Path, dtype="float32", channel_first: bool = True) -> np.ndarray:
@@ -381,7 +413,7 @@ def create_empty_dataset_info(
 
 
 def get_episode_data_index(
-    episode_dicts: list[dict], episodes: list[int] | None = None
+    episode_dicts: dict[dict], episodes: list[int] | None = None
 ) -> dict[str, torch.Tensor]:
     episode_lengths = {ep_idx: ep_dict["length"] for ep_idx, ep_dict in episode_dicts.items()}
     if episodes is not None:

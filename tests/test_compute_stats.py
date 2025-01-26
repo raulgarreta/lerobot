@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import numpy as np
 import pytest
 import torch
 
@@ -141,30 +142,32 @@ def test_aggregate_stats():
         },
     }
 
+    # cast to numpy
     for ep_stats in all_stats:
         for fkey, stats in ep_stats.items():
             for k in stats:
-                stats[k] = torch.tensor(stats[k], dtype=torch.int64 if k == "count" else torch.float32)
+                stats[k] = np.array(stats[k], dtype=np.int64 if k == "count" else np.float32)
                 if fkey == "observation.image" and k != "count":
-                    stats[k] = stats[k].view(3, 1, 1)  # for normalization on image channels
+                    stats[k] = stats[k].reshape(3, 1, 1)  # for normalization on image channels
                 else:
-                    stats[k] = stats[k].view(1)
+                    stats[k] = stats[k].reshape(1)
 
+    # cast to numpy
     for fkey, stats in expected_agg_stats.items():
         for k in stats:
-            stats[k] = torch.tensor(stats[k], dtype=torch.int64 if k == "count" else torch.float32)
+            stats[k] = np.array(stats[k], dtype=np.int64 if k == "count" else np.float32)
             if fkey == "observation.image" and k != "count":
-                stats[k] = stats[k].view(3, 1, 1)  # for normalization on image channels
+                stats[k] = stats[k].reshape(3, 1, 1)  # for normalization on image channels
             else:
-                stats[k] = stats[k].view(1)
+                stats[k] = stats[k].reshape(1)
 
     results = aggregate_stats(all_stats)
 
     for fkey in expected_agg_stats:
-        torch.testing.assert_close(results[fkey]["min"], expected_agg_stats[fkey]["min"])
-        torch.testing.assert_close(results[fkey]["max"], expected_agg_stats[fkey]["max"])
-        torch.testing.assert_close(results[fkey]["mean"], expected_agg_stats[fkey]["mean"])
-        torch.testing.assert_close(
+        np.testing.assert_allclose(results[fkey]["min"], expected_agg_stats[fkey]["min"])
+        np.testing.assert_allclose(results[fkey]["max"], expected_agg_stats[fkey]["max"])
+        np.testing.assert_allclose(results[fkey]["mean"], expected_agg_stats[fkey]["mean"])
+        np.testing.assert_allclose(
             results[fkey]["std"], expected_agg_stats[fkey]["std"], atol=1e-04, rtol=1e-04
         )
-        torch.testing.assert_close(results[fkey]["count"], expected_agg_stats[fkey]["count"])
+        np.testing.assert_allclose(results[fkey]["count"], expected_agg_stats[fkey]["count"])

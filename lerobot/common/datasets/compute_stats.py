@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import numpy as np
-import torch
 
 from lerobot.common.datasets.utils import load_image_as_numpy
 
@@ -31,7 +30,7 @@ def compute_episode_stats(episode_buffer: dict, features: dict, num_image_sample
                 "max": np.max(data, axis=axes_to_reduce),
                 "mean": np.mean(data, axis=axes_to_reduce),
                 "std": np.std(data, axis=axes_to_reduce),
-                "count": data.shape[0],
+                "count": np.array([data.shape[0]]),
             }
     return stats
 
@@ -71,11 +70,11 @@ def compute_image_stats(image_paths: list[str], num_samples: int | None = None) 
         "max": np.max(images, axis=axes_to_reduce, keepdims=True),
         "mean": np.mean(images, axis=axes_to_reduce, keepdims=True),
         "std": np.std(images, axis=axes_to_reduce, keepdims=True),
-        "count": len(images),
     }
     for key in image_stats:  # squeeze batch dim
         image_stats[key] = np.squeeze(image_stats[key], axis=0)
 
+    image_stats["count"] = np.array([len(images)])
     return image_stats
 
 
@@ -95,15 +94,15 @@ def aggregate_stats(stats_list: list[dict[str, dict]]) -> dict:
         for i in range(len(stats_list)):
             for fkey in stats_list[i]:
                 for k, v in stats_list[i][fkey].items():
-                    if not isinstance(v, torch.Tensor):
+                    if not isinstance(v, np.ndarray):
                         raise ValueError(
-                            f"Stats must be compared of torch tensors, but is {type(v)} instead."
+                            f"Stats must be composed of numpy array, but key '{k}' of feature '{fkey}' is of type '{type(v)}' instead."
                         )
                     if v.ndim == 0:
                         raise ValueError("Number of dimensions must be at least 1, and is 0 instead.")
-                    if k == "count" and v.shape != torch.Size([1]):
+                    if k == "count" and v.shape != (1,):
                         raise ValueError(f"Shape of 'count' must be (1), but is {v.shape} instead.")
-                    if "image" in k and v.shape != torch.Size([3, 1, 1]):
+                    if "image" in k and v.shape != (3, 1, 1):
                         raise ValueError(f"Shape of '{k}' must be (3,1,1), but is {v.shape} instead.")
 
     _assert_type_and_shape(stats_list)
@@ -116,35 +115,33 @@ def aggregate_stats(stats_list: list[dict[str, dict]]) -> dict:
         stats_with_key = [stats[key] for stats in stats_list if key in stats]
 
         # Aggregate 'min' and 'max' using np.minimum and np.maximum
-        min_, argmin_ = torch.min(torch.stack([s["min"] for s in stats_with_key]), dim=0)
-        max_, argmax_ = torch.max(torch.stack([s["max"] for s in stats_with_key]), dim=0)
-        aggregated_stats[key]["min"] = min_
-        aggregated_stats[key]["max"] = max_
+        aggregated_stats[key]["min"] = np.min(np.stack([s["min"] for s in stats_with_key]), axis=0)
+        aggregated_stats[key]["max"] = np.max(np.stack([s["max"] for s in stats_with_key]), axis=0)
 
         # Extract means, variances (std^2), and counts
-        means = torch.stack([s["mean"] for s in stats_with_key])
-        variances = torch.stack([s["std"] ** 2 for s in stats_with_key])
-        counts = torch.stack([s["count"] for s in stats_with_key])
+        means = np.stack([s["mean"] for s in stats_with_key])
+        variances = np.stack([s["std"] ** 2 for s in stats_with_key])
+        counts = np.stack([s["count"] for s in stats_with_key])
 
         # Compute total counts
-        total_count = counts.sum(dim=0)
+        total_count = counts.sum(axis=0)
 
         # Prepare weighted mean by matching number of dimensions
         while counts.ndim < means.ndim:
-            counts = counts.unsqueeze(-1)
+            counts = np.expand_dims(counts, axis=-1)
 
         # Compute the weighted mean
         weighted_means = means * counts
-        total_mean = weighted_means.sum(dim=0) / total_count
+        total_mean = weighted_means.sum(axis=0) / total_count
 
         # Compute the variance using the parallel algorithm
         delta_means = means - total_mean
         weighted_variances = (variances + delta_means**2) * counts
-        total_variance = weighted_variances.sum(dim=0) / total_count
+        total_variance = weighted_variances.sum(axis=0) / total_count
 
         # Store the aggregated stats
         aggregated_stats[key]["mean"] = total_mean
-        aggregated_stats[key]["std"] = torch.sqrt(total_variance)
+        aggregated_stats[key]["std"] = np.sqrt(total_variance)
         aggregated_stats[key]["count"] = total_count
 
     return aggregated_stats
