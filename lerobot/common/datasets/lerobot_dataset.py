@@ -16,6 +16,7 @@
 import logging
 import os
 import shutil
+import warnings
 from functools import cached_property
 from pathlib import Path
 from typing import Callable
@@ -28,16 +29,18 @@ import torch.utils
 from datasets import load_dataset
 from huggingface_hub import create_repo, snapshot_download, upload_folder
 
-from lerobot.common.datasets.compute_stats import aggregate_stats, compute_stats
+from lerobot.common.datasets.compute_stats import aggregate_stats, compute_episode_stats
 from lerobot.common.datasets.image_writer import AsyncImageWriter, write_image
 from lerobot.common.datasets.utils import (
     DEFAULT_FEATURES,
     DEFAULT_IMAGE_PATH,
     EPISODES_PATH,
+    EPISODES_STATS_PATH,
     INFO_PATH,
     STATS_PATH,
     TASKS_PATH,
     append_jsonlines,
+    backward_compatible_episodes_stats,
     check_delta_timestamps,
     check_timestamps_sync,
     check_version_compatibility,
@@ -51,6 +54,7 @@ from lerobot.common.datasets.utils import (
     get_hub_safe_version,
     hf_transform_to_torch,
     load_episodes,
+    load_episodes_stats,
     load_info,
     load_stats,
     load_tasks,
@@ -89,6 +93,15 @@ class LeRobotDatasetMetadata:
         self.stats = load_stats(self.root)
         self.tasks = load_tasks(self.root)
         self.episodes = load_episodes(self.root)
+        try:
+            self.episodes_stats = load_episodes_stats(self.root)
+        except FileNotFoundError:
+            # TODO(rcadene, aliberts): ideally update CODEBASE_VERSION to v2.1 and trigger when it is v2.0
+            warnings.warn(
+                "'episodes_stats.jsonl' not found. Use global dataset stats for each episode instead.",
+                stacklevel=1,
+            )
+            self.episodes_stats = backward_compatible_episodes_stats(self.stats, self.episodes.keys())
 
     def pull_from_repo(
         self,
@@ -214,7 +227,14 @@ class LeRobotDatasetMetadata:
         task_index = self.task_to_task_index.get(task, None)
         return task_index if task_index is not None else self.total_tasks
 
-    def save_episode(self, episode_index: int, episode_length: int, task: str, task_index: int) -> None:
+    def save_episode(
+        self,
+        episode_index: int,
+        episode_length: int,
+        task: str,
+        task_index: int,
+        episode_stats: dict[str, dict],
+    ) -> None:
         self.info["total_episodes"] += 1
         self.info["total_frames"] += episode_length
 
@@ -243,11 +263,8 @@ class LeRobotDatasetMetadata:
         self.episodes.append(episode_dict)
         append_jsonlines(episode_dict, self.root / EPISODES_PATH)
 
-        # TODO(aliberts): refactor stats in save_episodes
-        # image_sampling = int(self.fps / 2)  # sample 2 img/s for the stats
-        # ep_stats = compute_episode_stats(episode_buffer, self.features, episode_length, image_sampling=image_sampling)
-        # ep_stats = serialize_dict(ep_stats)
-        # append_jsonlines(ep_stats, self.root / STATS_PATH)
+        self.episodes_stats.append(episode_stats)
+        append_jsonlines(episode_stats, self.root / EPISODES_STATS_PATH)
 
     def write_video_info(self) -> None:
         """
@@ -306,7 +323,7 @@ class LeRobotDatasetMetadata:
             # TODO(aliberts, rcadene): implement sanity check for features
             features = {**features, **DEFAULT_FEATURES}
 
-        obj.tasks, obj.stats, obj.episodes = {}, {}, []
+        obj.tasks, obj.stats, obj.episodes, obj.episodes_stats = {}, {}, [], []
         obj.info = create_empty_dataset_info(CODEBASE_VERSION, fps, robot_type, features, use_videos)
         if len(obj.video_keys) > 0 and not use_videos:
             raise ValueError()
@@ -747,6 +764,26 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if not episode_data:
             episode_buffer = self.episode_buffer
 
+        self._wait_image_writer()
+        episode_buffer, episode_index, episode_length, task_index = self._prepare_episode_buffer(
+            episode_buffer, task
+        )
+        self._save_episode_table(episode_buffer, episode_index)
+        ep_stats = self._compute_episode_stats(episode_buffer)
+
+        self.meta.save_episode(episode_index, episode_length, task, task_index, ep_stats)
+
+        if encode_videos and len(self.meta.video_keys) > 0:
+            video_paths = self.encode_episode_videos(episode_index)
+            for key in self.meta.video_keys:
+                episode_buffer[key] = video_paths[key]
+
+        if not episode_data:  # Reset the buffer
+            self.episode_buffer = self.create_episode_buffer()
+
+        self.consolidated = False
+
+    def _prepare_episode_buffer(self, episode_buffer: dict, task: str):
         episode_length = episode_buffer.pop("size")
         episode_index = episode_buffer["episode_index"]
         if episode_index != self.meta.total_episodes:
@@ -784,20 +821,12 @@ class LeRobotDataset(torch.utils.data.Dataset):
             else:
                 raise ValueError(key)
 
-        self._wait_image_writer()
-        self._save_episode_table(episode_buffer, episode_index)
+        return episode_buffer, episode_index, episode_length, task_index
 
-        self.meta.save_episode(episode_index, episode_length, task, task_index)
-
-        if encode_videos and len(self.meta.video_keys) > 0:
-            video_paths = self.encode_episode_videos(episode_index)
-            for key in self.meta.video_keys:
-                episode_buffer[key] = video_paths[key]
-
-        if not episode_data:  # Reset the buffer
-            self.episode_buffer = self.create_episode_buffer()
-
-        self.consolidated = False
+    def _compute_episode_stats(self, episode_buffer: dict):
+        image_sampling = int(self.fps / 2)  # sample 2 img/s for the stats
+        ep_stats = compute_episode_stats(episode_buffer, self.features, image_sampling=image_sampling)
+        return serialize_dict(ep_stats)
 
     def _save_episode_table(self, episode_buffer: dict, episode_index: int) -> None:
         episode_dict = {key: episode_buffer[key] for key in self.hf_features}
@@ -895,8 +924,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         if run_compute_stats:
             self.stop_image_writer()
-            # TODO(aliberts): refactor stats in save_episodes
-            self.meta.stats = compute_stats(self)
+            self.meta.stats = aggregate_stats(self.meta.episodes_stats)
             serialized_stats = serialize_dict(self.meta.stats)
             write_json(serialized_stats, self.root / STATS_PATH)
             self.consolidated = True
