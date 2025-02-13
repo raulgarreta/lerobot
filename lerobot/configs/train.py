@@ -148,7 +148,8 @@ class TrainPipelineConfig(HubMixin):
             config_path = parser.parse_arg("config_path")
             if not config_path:
                 raise ValueError("A config_path is expected when resuming a run.")
-            policy_path = Path(config_path).parent
+            # policy_path = Path(config_path).parent
+            policy_path = Path(config_path)
             self.policy.pretrained_path = policy_path
             self.checkpoint_path = policy_path.parent
 
