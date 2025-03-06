@@ -241,17 +241,12 @@ class ManipulatorRobot:
             print(f"Connecting {name} leader arm.")
             self.leader_arms[name].connect()
 
-        if self.robot_type in ["koch", "koch_bimanual", "aloha"]:
-            from lerobot.common.robot_devices.motors.dynamixel import TorqueMode
-        elif self.robot_type in ["so100", "moss", "lekiwi"]:
-            from lerobot.common.robot_devices.motors.feetech import TorqueMode
-
         # We assume that at connection time, arms are in a rest position, and torque can
         # be safely disabled to run calibration and/or set robot preset configurations.
         for name in self.follower_arms:
-            self.follower_arms[name].write("Torque_Enable", TorqueMode.DISABLED.value)
+            self.follower_arms[name].write_torque_disabled()
         for name in self.leader_arms:
-            self.leader_arms[name].write("Torque_Enable", TorqueMode.DISABLED.value)
+            self.leader_arms[name].write_torque_disabled()
 
         self.activate_calibration()
 
@@ -262,6 +257,8 @@ class ManipulatorRobot:
             self.set_aloha_robot_preset()
         elif self.robot_type in ["so100", "moss", "lekiwi"]:
             self.set_so100_robot_preset()
+        elif self.robot_type == "so100_with_koch":
+            self.set_so100_with_koch_preset()
 
         # Enable torque on all motors of the follower arms
         for name in self.follower_arms:
@@ -269,7 +266,7 @@ class ManipulatorRobot:
             self.follower_arms[name].write("Torque_Enable", 1)
 
         if self.config.gripper_open_degree is not None:
-            if self.robot_type not in ["koch", "koch_bimanual"]:
+            if self.robot_type not in ["koch", "koch_bimanual", "so100_with_koch"]:
                 raise NotImplementedError(
                     f"{self.robot_type} does not support position AND current control in the handle, which is require to set the gripper open."
                 )
@@ -308,17 +305,8 @@ class ManipulatorRobot:
                 # TODO(rcadene): display a warning in __init__ if calibration file not available
                 print(f"Missing calibration file '{arm_calib_path}'")
 
-                if self.robot_type in ["koch", "koch_bimanual", "aloha"]:
-                    from lerobot.common.robot_devices.robots.dynamixel_calibration import run_arm_calibration
-
-                    calibration = run_arm_calibration(arm, self.robot_type, name, arm_type)
-
-                elif self.robot_type in ["so100", "moss", "lekiwi"]:
-                    from lerobot.common.robot_devices.robots.feetech_calibration import (
-                        run_arm_manual_calibration,
-                    )
-
-                    calibration = run_arm_manual_calibration(arm, self.robot_type, name, arm_type)
+                robot_type = "koch" if self.robot_type == "so100_with_koch" else self.robot_type
+                calibration = arm.run_calibration(robot_type, name, arm_type)
 
                 print(f"Calibration is done! Saving calibration file '{arm_calib_path}'")
                 arm_calib_path.parent.mkdir(parents=True, exist_ok=True)
@@ -441,6 +429,28 @@ class ManipulatorRobot:
             # the motors. Note: this configuration is not in the official STS3215 Memory Table
             self.follower_arms[name].write("Maximum_Acceleration", 254)
             self.follower_arms[name].write("Acceleration", 254)
+
+    def set_so100_with_koch_preset(self):
+        def set_koch_leader_preset(arm):
+            from lerobot.common.robot_devices.motors.dynamixel import TorqueMode
+
+            if (arm.read("Torque_Enable") != TorqueMode.DISABLED.value).any():
+                raise ValueError("To run set robot preset, the torque must be disabled on all motors.")
+
+            all_motors_except_gripper = [name for name in arm.motor_names if name != "gripper"]
+            if len(all_motors_except_gripper) > 0:
+                arm.write("Operating_Mode", 4, all_motors_except_gripper)
+
+            arm.write("Operating_Mode", 5, "gripper")
+
+        for name in self.leader_arms:
+            set_koch_leader_preset(self.leader_arms[name])
+            # Apply Koch preset to leader arms
+            if self.config.gripper_open_degree is not None:
+                self.leader_arms[name].write("Torque_Enable", 1, "gripper")
+                self.leader_arms[name].write("Goal_Position", self.config.gripper_open_degree, "gripper")
+        # Apply SO100 preset to follower arms by reusing the existing method
+        self.set_so100_robot_preset()
 
     def teleop_step(
         self, record_data=False

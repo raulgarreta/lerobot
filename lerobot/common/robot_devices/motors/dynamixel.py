@@ -18,6 +18,7 @@ import math
 import time
 import traceback
 from copy import deepcopy
+from os import write
 
 import numpy as np
 import tqdm
@@ -420,6 +421,10 @@ class DynamixelMotorsBus:
 
     def set_calibration(self, calibration: dict[str, list]):
         self.calibration = calibration
+
+    def run_calibration(self, robot_type, name, arm_type):
+        from lerobot.common.robot_devices.robots.dynamixel_calibration import run_arm_calibration
+        return run_arm_calibration(self, robot_type, name, arm_type)
 
     def apply_calibration_autocorrect(self, values: np.ndarray | list, motor_names: list[str] | None):
         """This function applies the calibration, automatically detects out of range errors for motors values and attempts to correct.
@@ -852,6 +857,9 @@ class DynamixelMotorsBus:
         # log the utc time when the write has been completed
         ts_utc_name = get_log_name("timestamp_utc", "write", data_name, motor_names)
         self.logs[ts_utc_name] = capture_timestamp_utc()
+
+    def write_torque_disabled(self):
+        self.write("Torque_Enable", TorqueMode.DISABLED.value)
 
     def disconnect(self):
         if not self.is_connected:
