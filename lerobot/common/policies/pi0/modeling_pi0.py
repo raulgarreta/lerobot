@@ -18,7 +18,7 @@
 π0: A Vision-Language-Action Flow Model for General Robot Control
 
 [Paper](https://www.physicalintelligence.company/download/pi0.pdf)
-[Jax code](https://github.com/Physical-Intelligence/openpi)
+[Jax code](hx)
 
 Designed by Physical Intelligence. Ported from Jax by Hugging Face.
 

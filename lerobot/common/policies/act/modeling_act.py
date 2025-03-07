@@ -71,6 +71,7 @@ class ACTPolicy(PreTrainedPolicy):
             config.output_features, config.normalization_mapping, dataset_stats
         )
 
+        # creates instance of the ACT model
         self.model = ACT(config)
 
         if config.temporal_ensemble_coeff is not None:
@@ -147,20 +148,28 @@ class ACTPolicy(PreTrainedPolicy):
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
         """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
+
+        # stack images into a single tensor
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
             batch["observation.images"] = torch.stack(
                 [batch[key] for key in self.config.image_features], dim=-4
             )
         batch = self.normalize_targets(batch)
+        
+        # Forward pass through the model.
         actions_hat, (mu_hat, log_sigma_x2_hat) = self.model(batch)
 
+        # Calculate the loss between the predicted and target actions.
         l1_loss = (
             F.l1_loss(batch["action"], actions_hat, reduction="none") * ~batch["action_is_pad"].unsqueeze(-1)
         ).mean()
 
         loss_dict = {"l1_loss": l1_loss.item()}
         if self.config.use_vae:
+
+            # KL-divergence between the latent distribution and a standard normal distribution.
+
             # Calculate Dₖₗ(latent_pdf || standard_normal). Note: After computing the KL-divergence for
             # each dimension independently, we sum over the latent dimension to get the total
             # KL-divergence per batch element, then take the mean over the batch.

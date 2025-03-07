@@ -64,22 +64,42 @@ def update_policy(
     use_amp: bool = False,
     lock=None,
 ) -> tuple[MetricsTracker, dict]:
+    
+    
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
+
+    # Forward pass and loss computation with autocast
+    # use_amp is a boolean that determines whether to use Automatic Mixed Precision (AMP) for training and evaluation.
     with torch.autocast(device_type=device.type) if use_amp else nullcontext():
         loss, output_dict = policy.forward(batch)
         # TODO(rcadene): policy.unnormalize_outputs(out_dict)
+    
+    # Backward pass and optimization with autocast
     grad_scaler.scale(loss).backward()
 
     # Unscale the graident of the optimzer's assigned params in-place **prior to gradient clipping**.
     grad_scaler.unscale_(optimizer)
 
+    # Clip the gradients to the specified norm. The norm is computed over all gradients together,
+    # as if they were concatenated into a single vector. Gradients are modified in-place.
+    # gradient clipping is a technique to prevent exploding gradients in deep learning models.
+    # It is a regularization technique that rescales the gradient to have a norm of 1.
+    # Conservative: grad_clip_norm = 0.5
+    # Standard: grad_clip_norm = 1.0
+    # Lenient: grad_clip_norm = 5.0
     grad_norm = torch.nn.utils.clip_grad_norm_(
         policy.parameters(),
         grad_clip_norm,
         error_if_nonfinite=False,
     )
+
+    # grad_nomr is a tensor that contains the global norm of the gradients for all the parameters.
+    # It is computed as the norm of the concatenated vector of all gradients.
+    # If the norm is less than the threshold, the gradients are left as is.
+    # If the norm exceeds the threshold, the gradients are scaled back to the threshold.
+    # The norm is computed over all gradients together, as if they were concatenated into a single vector.
 
     # Optimizer's gradients are already unscaled, so scaler.step does not unscale them,
     # although it still skips optimizer.step() if the gradients contain infs or NaNs.
@@ -88,10 +108,14 @@ def update_policy(
     # Updates the scale for next iteration.
     grad_scaler.update()
 
+    # Zero the gradients before the next forward pass.
     optimizer.zero_grad()
 
     # Step through pytorch scheduler at every batch instead of epoch
     if lr_scheduler is not None:
+        # Step the scheduler, which will update the learning rate.
+        # This is usually called once per epoch, after the optimizer’s update.
+        # This is necessary because the learning rate might change during training.
         lr_scheduler.step()
 
     if has_method(policy, "update"):
@@ -135,6 +159,7 @@ def train(cfg: TrainPipelineConfig):
         logging.info("Creating env")
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size)
 
+    # Create policy
     logging.info("Creating policy")
     policy = make_policy(
         cfg=cfg.policy,
@@ -142,16 +167,20 @@ def train(cfg: TrainPipelineConfig):
         ds_meta=dataset.meta,
     )
 
+    # Create optimizer and scheduler
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
     grad_scaler = GradScaler(device, enabled=cfg.use_amp)
 
     step = 0  # number of policy updates (forward + backward + optim)
 
+    # Load training state if resuming
     if cfg.resume:
         step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
 
+    # Number of learnable parameters
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+    # Total number of parameters
     num_total_params = sum(p.numel() for p in policy.parameters())
 
     logging.info(colored("Output dir:", "yellow", attrs=["bold"]) + f" {cfg.output_dir}")
@@ -175,6 +204,8 @@ def train(cfg: TrainPipelineConfig):
         shuffle = True
         sampler = None
 
+    # DataLoader is a class that represents a Python iterable over a dataset.
+    # The DataLoader combines a dataset and a sampler, and provides an iterable over the given dataset.
     dataloader = torch.utils.data.DataLoader(
         dataset,
         num_workers=cfg.num_workers,
@@ -184,10 +215,14 @@ def train(cfg: TrainPipelineConfig):
         pin_memory=device.type != "cpu",
         drop_last=False,
     )
+
+    # cycle is a function that returns an iterator that iterates over the elements of the iterable indefinitely.
     dl_iter = cycle(dataloader)
 
+    # It enables training mode, this is a function from pytorch.
     policy.train()
 
+    # Metrics to track during training
     train_metrics = {
         "loss": AverageMeter("loss", ":.3f"),
         "grad_norm": AverageMeter("grdn", ":.3f"),
@@ -200,16 +235,24 @@ def train(cfg: TrainPipelineConfig):
         cfg.batch_size, dataset.num_frames, dataset.num_episodes, train_metrics, initial_step=step
     )
 
+
+    # this is the main training loop
     logging.info("Start offline training on a fixed dataset")
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
+
+        # Get a batch of data
         batch = next(dl_iter)
+
+        # calculate the time it took to load the data
         train_tracker.dataloading_s = time.perf_counter() - start_time
 
+        # Move the batch to the device
         for key in batch:
             if isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(device, non_blocking=True)
 
+        # Update the policy
         train_tracker, output_dict = update_policy(
             train_tracker,
             policy,
@@ -229,6 +272,8 @@ def train(cfg: TrainPipelineConfig):
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps
         is_eval_step = cfg.eval_freq > 0 and step % cfg.eval_freq == 0
 
+
+        # Log the training metrics
         if is_log_step:
             logging.info(train_tracker)
             if wandb_logger:
@@ -236,6 +281,7 @@ def train(cfg: TrainPipelineConfig):
                 wandb_logger.log_dict(wandb_log_dict, step)
             train_tracker.reset_averages()
 
+        # Save the policy checkpoint
         if cfg.save_checkpoint and is_saving_step:
             logging.info(f"Checkpoint policy after step {step}")
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
@@ -244,6 +290,7 @@ def train(cfg: TrainPipelineConfig):
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
 
+        # Evaluate the policy
         if cfg.env and is_eval_step:
             step_id = get_step_identifier(step, cfg.steps)
             logging.info(f"Eval policy at step {step}")
