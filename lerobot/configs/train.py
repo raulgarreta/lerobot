@@ -80,7 +80,14 @@ class TrainPipelineConfig(HubMixin):
             # The entire train config is already loaded, we just need to get the checkpoint dir
             config_path = parser.parse_arg("config_path")
             if not config_path:
-                raise ValueError("A config_path is expected when resuming a run.")
+                raise ValueError(
+                    f"A config_path is expected when resuming a run. Please specify path to {TRAIN_CONFIG_NAME}"
+                )
+            if not Path(config_path).resolve().exists():
+                raise NotADirectoryError(
+                    f"{config_path=} is expected to be a local path. "
+                    "Resuming from the hub is not supported for now."
+                )
             # policy_path = Path(config_path).parent
             policy_path = Path(config_path)
             self.policy.pretrained_path = policy_path
