@@ -60,6 +60,7 @@ class TrainPipelineConfig(HubMixin):
     save_freq: int = 20_000
     use_policy_training_preset: bool = True
     optimizer: OptimizerConfig | None = None
+    # learning rate scheduler
     scheduler: LRSchedulerConfig | None = None
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)

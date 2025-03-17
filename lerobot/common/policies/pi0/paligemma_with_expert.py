@@ -196,6 +196,9 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
     def train(self, mode: bool = True):
         super().train(mode)
 
+        # puts vision transformer and paligemma in eval mode depending on configs
+        # meaning that they will not update their weights
+
         if self.config.freeze_vision_encoder:
             self.paligemma.vision_tower.eval()
 

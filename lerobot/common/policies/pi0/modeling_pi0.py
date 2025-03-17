@@ -541,12 +541,20 @@ class PI0FlowMatching(nn.Module):
         lang_emb_dim = lang_emb.shape[-1]
         lang_emb = lang_emb * math.sqrt(lang_emb_dim)
 
-        embs.append(lang_emb)
-        pad_masks.append(lang_masks)
+        # embs.append(lang_emb)
+        # pad_masks.append(lang_masks)
+        embs.append(lang_emb[0].unsqueeze(0))
+        pad_masks.append(lang_masks[0].unsqueeze(0))
+
 
         # full attention between image and language inputs
         num_lang_embs = lang_emb.shape[1]
         att_masks += [0] * num_lang_embs
+
+        # for i, emb in enumerate(pad_masks):
+        #     print(f"emb{i} shape", emb.shape)
+        #     print(emb)
+
 
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1)
