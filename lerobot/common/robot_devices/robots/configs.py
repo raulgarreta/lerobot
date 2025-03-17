@@ -541,6 +541,73 @@ class So100RobotConfig(ManipulatorRobotConfig):
 
     mock: bool = False
 
+@RobotConfig.register_subclass("so100_with_koch")
+@dataclass
+class So100WithKochRobotConfig(ManipulatorRobotConfig):
+    calibration_dir: str = ".cache/calibration/so100_with_koch"
+    # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
+    # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
+    # the number of motors in your follower arms.
+    max_relative_target: int | None = None
+
+    leader_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "main": DynamixelMotorsBusConfig(
+                port="COM9",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "xl330-m077"],
+                    "shoulder_lift": [2, "xl330-m077"],
+                    "elbow_flex": [3, "xl330-m077"],
+                    "wrist_flex": [4, "xl330-m077"],
+                    "wrist_roll": [5, "xl330-m077"],
+                    "gripper": [6, "xl330-m077"],
+                },
+            ),
+        }
+    )
+
+    follower_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "main": FeetechMotorsBusConfig(
+                port="COM10",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "sts3215"],
+                    "shoulder_lift": [2, "sts3215"],
+                    "elbow_flex": [3, "sts3215"],
+                    "wrist_flex": [4, "sts3215"],
+                    "wrist_roll": [5, "sts3215"],
+                    "gripper": [6, "sts3215"],
+                },
+            ),
+        }
+    )
+
+    cameras: dict[str, CameraConfig] = field(
+        default_factory=lambda: {
+            "laptop": OpenCVCameraConfig(
+                camera_index=0,
+                fps=30,
+                width=640,
+                height=480,
+            ),
+            "phone": OpenCVCameraConfig(
+                camera_index=1,
+                fps=30,
+                width=640,
+                height=480,
+            ),
+        }
+    )
+
+    # ~ Koch specific settings ~
+    # Sets the leader arm in torque mode with the gripper motor set to this angle. This makes it possible
+    # to squeeze the gripper and have it spring back to an open position on its own.
+    gripper_open_degree: float = 35.156
+
+    mock: bool = False
+
 
 @RobotConfig.register_subclass("stretch")
 @dataclass

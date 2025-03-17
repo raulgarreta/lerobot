@@ -23,6 +23,7 @@ from lerobot.common.robot_devices.robots.configs import (
     MossRobotConfig,
     RobotConfig,
     So100RobotConfig,
+    So100WithKochRobotConfig,
     StretchRobotConfig,
 )
 
@@ -62,6 +63,8 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
         return StretchRobotConfig(**kwargs)
     elif robot_type == "lekiwi":
         return LeKiwiRobotConfig(**kwargs)
+    elif robot_type == "so100_with_koch":
+        return So100WithKochRobotConfig(**kwargs)
     else:
         raise ValueError(f"Robot type '{robot_type}' is not available.")
 

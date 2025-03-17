@@ -415,6 +415,12 @@ class FeetechMotorsBus:
             values = self.apply_calibration(values, motor_names)
         return values
 
+    def run_calibration(self, robot_type, name, arm_type):
+        from lerobot.common.robot_devices.robots.feetech_calibration import (
+            run_arm_manual_calibration,
+        )
+        return run_arm_manual_calibration(self, robot_type, name, arm_type)
+
     def apply_calibration(self, values: np.ndarray | list, motor_names: list[str] | None):
         """Convert from unsigned int32 joint position range [0, 2**32[ to the universal float32 nominal degree range ]-180.0, 180.0[ with
         a "zero position" at 0 degree.
@@ -877,6 +883,9 @@ class FeetechMotorsBus:
         # log the utc time when the write has been completed
         ts_utc_name = get_log_name("timestamp_utc", "write", data_name, motor_names)
         self.logs[ts_utc_name] = capture_timestamp_utc()
+
+    def write_torque_disabled(self):
+        self.write("Torque_Enable", TorqueMode.DISABLED.value)
 
     def disconnect(self):
         if not self.is_connected:
