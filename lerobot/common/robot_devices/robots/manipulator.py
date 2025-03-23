@@ -257,7 +257,7 @@ class ManipulatorRobot:
             self.set_aloha_robot_preset()
         elif self.robot_type in ["so100", "moss", "lekiwi"]:
             self.set_so100_robot_preset()
-        elif self.robot_type == "so100_with_koch":
+        elif self.robot_type in ["so100_with_koch", "lekiwi_with_koch"]:
             self.set_so100_with_koch_preset()
 
         # Enable torque on all motors of the follower arms
@@ -266,7 +266,7 @@ class ManipulatorRobot:
             self.follower_arms[name].write("Torque_Enable", 1)
 
         if self.config.gripper_open_degree is not None:
-            if self.robot_type not in ["koch", "koch_bimanual", "so100_with_koch"]:
+            if self.robot_type not in ["koch", "koch_bimanual", "so100_with_koch", "lekiwi_with_koch"]:
                 raise NotImplementedError(
                     f"{self.robot_type} does not support position AND current control in the handle, which is require to set the gripper open."
                 )
@@ -305,7 +305,7 @@ class ManipulatorRobot:
                 # TODO(rcadene): display a warning in __init__ if calibration file not available
                 print(f"Missing calibration file '{arm_calib_path}'")
 
-                robot_type = "koch" if self.robot_type == "so100_with_koch" else self.robot_type
+                robot_type = "koch" if self.robot_type in ["so100_with_koch", "lekiwi_with_koch"] else self.robot_type
                 calibration = arm.run_calibration(robot_type, name, arm_type)
 
                 print(f"Calibration is done! Saving calibration file '{arm_calib_path}'")

@@ -553,7 +553,7 @@ class So100WithKochRobotConfig(ManipulatorRobotConfig):
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "main": DynamixelMotorsBusConfig(
-                port="COM9",
+                port="/dev/tty.usbmodem58FD0167771",
                 motors={
                     # name: (index, model)
                     "shoulder_pan": [1, "xl330-m077"],
@@ -570,7 +570,7 @@ class So100WithKochRobotConfig(ManipulatorRobotConfig):
     follower_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
             "main": FeetechMotorsBusConfig(
-                port="COM10",
+                port="/dev/tty.usbmodem58FD0167571",
                 motors={
                     # name: (index, model)
                     "shoulder_pan": [1, "sts3215"],
@@ -724,5 +724,97 @@ class LeKiwiRobotConfig(RobotConfig):
             "quit": "q",
         }
     )
+
+    mock: bool = False
+
+
+@RobotConfig.register_subclass("lekiwi_with_koch")
+@dataclass
+class LeKiwiWithKochRobotConfig(LeKiwiRobotConfig):
+    # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
+    # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
+    # the number of motors in your follower arms.
+    max_relative_target: int | None = None
+
+    # Network Configuration
+    ip: str = "raspberrypi1.local"
+
+    # wired connection
+    # ip: str = "127.0.0.1"
+    
+    port: int = 5555
+    video_port: int = 5556
+
+    cameras: dict[str, CameraConfig] = field(
+        default_factory=lambda: {
+            "front": OpenCVCameraConfig(
+                camera_index="/dev/video0", fps=30, width=640, height=480, rotation=90
+            ),
+            "wrist": OpenCVCameraConfig(
+                camera_index="/dev/video2", fps=30, width=640, height=480, rotation=180
+            ),
+        }
+    )
+
+    calibration_dir: str = ".cache/calibration/lekiwi_with_koch"
+
+    leader_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "main": DynamixelMotorsBusConfig(
+                port="/dev/tty.usbmodem58FD0167771",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "xl330-m077"],
+                    "shoulder_lift": [2, "xl330-m077"],
+                    "elbow_flex": [3, "xl330-m077"],
+                    "wrist_flex": [4, "xl330-m077"],
+                    "wrist_roll": [5, "xl330-m077"],
+                    "gripper": [6, "xl330-m077"],
+                },
+            ),
+        }
+    )
+
+    follower_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "main": FeetechMotorsBusConfig(
+                port="/dev/tty.usbmodem58FD0167571",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "sts3215"],
+                    "shoulder_lift": [2, "sts3215"],
+                    "elbow_flex": [3, "sts3215"],
+                    "wrist_flex": [4, "sts3215"],
+                    "wrist_roll": [5, "sts3215"],
+                    "gripper": [6, "sts3215"],
+                    "left_wheel": (7, "sts3215"),
+                    "back_wheel": (8, "sts3215"),
+                    "right_wheel": (9, "sts3215"),
+                },
+            ),
+        }
+    )
+
+    teleop_keys: dict[str, str] = field(
+        default_factory=lambda: {
+            # Movement
+            "forward": "w",
+            "backward": "s",
+            "left": "a",
+            "right": "d",
+            "rotate_left": "z",
+            "rotate_right": "x",
+            # Speed control
+            "speed_up": "r",
+            "speed_down": "f",
+            # quit teleop
+            "quit": "q",
+        }
+    )
+
+    # ~ Koch specific settings ~
+    # Sets the leader arm in torque mode with the gripper motor set to this angle. This makes it possible
+    # to squeeze the gripper and have it spring back to an open position on its own.
+    gripper_open_degree: float = 35.156
 
     mock: bool = False

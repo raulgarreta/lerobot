@@ -266,7 +266,11 @@ class MobileManipulator:
                 calibration = json.load(f)
         else:
             print(f"Missing calibration file '{arm_calib_path}'")
-            calibration = run_arm_manual_calibration(arm, self.robot_type, name, arm_type)
+
+            robot_type = "koch" if self.robot_type in ["lekiwi_with_koch"] else self.robot_type
+            # calibration = run_arm_manual_calibration(arm, robot_type, name, arm_type)
+            calibration = arm.run_calibration(robot_type, name, arm_type)
+
             print(f"Calibration is done! Saving calibration file '{arm_calib_path}'")
             arm_calib_path.parent.mkdir(parents=True, exist_ok=True)
             with open(arm_calib_path, "w") as f:
@@ -280,8 +284,9 @@ class MobileManipulator:
             arm.connect()
 
             # Disable torque on all motors
-            for motor_id in arm.motors:
-                arm.write("Torque_Enable", TorqueMode.DISABLED.value, motor_id)
+            # for motor_id in arm.motors:
+            #     arm.write("Torque_Enable", TorqueMode.DISABLED.value, motor_id)
+            arm.write_torque_disabled()
 
             # Now run calibration
             calibration = self.load_or_run_calibration_(name, arm, "leader")
@@ -292,8 +297,9 @@ class MobileManipulator:
             bus.connect()
 
             # Disable torque on all motors
-            for motor_id in bus.motors:
-                bus.write("Torque_Enable", 0, motor_id)
+            # for motor_id in bus.motors:
+            #     bus.write("Torque_Enable", 0, motor_id)
+            bus.write_torque_disabled()
 
             # Then filter out wheels
             arm_only_dict = {k: v for k, v in bus.motors.items() if not k.startswith("wheel_")}
