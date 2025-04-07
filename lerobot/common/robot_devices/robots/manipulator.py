@@ -250,6 +250,8 @@ class ManipulatorRobot:
 
         self.activate_calibration()
 
+        
+
         # Set robot preset (e.g. torque in leader gripper for Koch v1.1)
         if self.robot_type in ["koch", "koch_bimanual"]:
             self.set_koch_robot_preset()
@@ -273,6 +275,7 @@ class ManipulatorRobot:
             # Set the leader arm in torque mode with the gripper motor set to an angle. This makes it possible
             # to squeeze the gripper and have it spring back to an open position on its own.
             for name in self.leader_arms:
+                print(f"Activating torque on {name} leader arm.")
                 self.leader_arms[name].write("Torque_Enable", 1, "gripper")
                 self.leader_arms[name].write("Goal_Position", self.config.gripper_open_degree, "gripper")
 

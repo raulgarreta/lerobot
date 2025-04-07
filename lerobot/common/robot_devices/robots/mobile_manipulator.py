@@ -239,7 +239,7 @@ class MobileManipulator:
         if not self.leader_arms:
             raise ValueError("MobileManipulator has no leader arm to connect.")
         for name in self.leader_arms:
-            print(f"Connecting {name} leader arm.")
+            print(f"Connecting {name} leader arm mobile.")
             self.calibrate_leader()
 
         # Set up ZeroMQ sockets to communicate with the remote mobile robot.
@@ -291,6 +291,12 @@ class MobileManipulator:
             # Now run calibration
             calibration = self.load_or_run_calibration_(name, arm, "leader")
             arm.set_calibration(calibration)
+
+            # Apply Koch preset to leader arms
+            if self.config.gripper_open_degree is not None:
+                print(f"Applying Koch preset to {name} leader arm.")
+                arm.write("Torque_Enable", 1, "gripper")
+                arm.write("Goal_Position", self.config.gripper_open_degree, "gripper")
 
     def calibrate_follower(self):
         for name, bus in self.follower_arms.items():

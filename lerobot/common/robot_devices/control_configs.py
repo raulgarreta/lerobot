@@ -62,6 +62,8 @@ class RecordControlConfig(ControlConfig):
     episode_time_s: int | float = 60
     # Number of seconds for resetting the environment after each episode.
     reset_time_s: int | float = 60
+    # Number of episodes interval to do reset
+    reset_period: int = 1
     # Number of episodes to record.
     num_episodes: int = 50
     # Encode frames in the dataset into video

@@ -487,20 +487,20 @@ class So100RobotConfig(ManipulatorRobotConfig):
 
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
-            "main": FeetechMotorsBusConfig(
-                # port="/dev/tty.usbmodem58760431091",
-                port="/dev/tty.usbmodem58FD0167571",
+            # "main": FeetechMotorsBusConfig(
+            #     # port="/dev/tty.usbmodem58760431091",
+            #     port="/dev/tty.usbmodem58FD0167571",
                 
-                motors={
-                    # name: (index, model)
-                    "shoulder_pan": [1, "sts3215"],
-                    "shoulder_lift": [2, "sts3215"],
-                    "elbow_flex": [3, "sts3215"],
-                    "wrist_flex": [4, "sts3215"],
-                    "wrist_roll": [5, "sts3215"],
-                    "gripper": [6, "sts3215"],
-                },
-            ),
+            #     motors={
+            #         # name: (index, model)
+            #         "shoulder_pan": [1, "sts3215"],
+            #         "shoulder_lift": [2, "sts3215"],
+            #         "elbow_flex": [3, "sts3215"],
+            #         "wrist_flex": [4, "sts3215"],
+            #         "wrist_roll": [5, "sts3215"],
+            #         "gripper": [6, "sts3215"],
+            #     },
+            # ),
         }
     )
 
@@ -508,7 +508,7 @@ class So100RobotConfig(ManipulatorRobotConfig):
         default_factory=lambda: {
             "main": FeetechMotorsBusConfig(
                 # port="/dev/tty.usbmodem585A0076891",
-                port="/dev/tty.usbmodem58FD0170151",
+                port="/dev/tty.usbmodem58FD0167571",
                 motors={
                     # name: (index, model)
                     "shoulder_pan": [1, "sts3215"],
@@ -521,21 +521,22 @@ class So100RobotConfig(ManipulatorRobotConfig):
             ),
         }
     )
+    
 
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
-            "laptop": OpenCVCameraConfig(
-                camera_index=0,
-                fps=30,
-                width=640,
-                height=480,
-            ),
-            "phone": OpenCVCameraConfig(
+            "webcam": OpenCVCameraConfig(
                 camera_index=1,
                 fps=30,
-                width=640,
-                height=480,
+                width=320,
+                height=240,
             ),
+            # "wrist": OpenCVCameraConfig(
+            #     camera_index=1,
+            #     fps=30,
+            #     width=320,
+            #     height=240,
+            # ),
         }
     )
 
@@ -737,10 +738,10 @@ class LeKiwiWithKochRobotConfig(LeKiwiRobotConfig):
     max_relative_target: int | None = None
 
     # Network Configuration
-    ip: str = "raspberrypi1.local"
+    # ip: str = "raspberrypi1.local"
 
     # wired connection
-    # ip: str = "127.0.0.1"
+    ip: str = "127.0.0.1"
     
     port: int = 5555
     video_port: int = 5556
@@ -748,10 +749,10 @@ class LeKiwiWithKochRobotConfig(LeKiwiRobotConfig):
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
             "front": OpenCVCameraConfig(
-                camera_index="/dev/video0", fps=30, width=640, height=480, rotation=90
+                camera_index=1, fps=30, width=320, height=240, rotation=90
             ),
             "wrist": OpenCVCameraConfig(
-                camera_index="/dev/video2", fps=30, width=640, height=480, rotation=180
+                camera_index=0, fps=30, width=320, height=240, rotation=None
             ),
         }
     )
