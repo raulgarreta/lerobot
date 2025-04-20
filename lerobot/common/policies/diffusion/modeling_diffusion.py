@@ -83,6 +83,12 @@ class DiffusionPolicy(PreTrainedPolicy):
 
         self.diffusion = DiffusionModel(config)
 
+        if config.resize_shape is not None:
+            self.do_resize = True
+            self.resize = torchvision.transforms.Resize(config.resize_shape)
+        else:
+            self.do_resize = False
+
         self.reset()
 
     def get_optim_params(self) -> dict:
@@ -122,11 +128,22 @@ class DiffusionPolicy(PreTrainedPolicy):
         actually measured from the first observation which (if `n_obs_steps` > 1) happened in the past.
         """
         batch = self.normalize_inputs(batch)
+        # if self.config.image_features:
+        #     batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
+        #     batch["observation.images"] = torch.stack(
+        #         [batch[key] for key in self.config.image_features], dim=-4
+        #     )
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = torch.stack(
-                [batch[key] for key in self.config.image_features], dim=-4
-            )
+            if self.do_resize:   
+                for key in self.config.image_features:
+                    print(f"{key}: {batch[key].shape}")
+                    group_size, channels, old_h, old_w = batch[key].shape
+                    x_reshaped = batch[key].reshape(-1, old_h, old_w)
+                    x_resized = self.resize(x_reshaped)
+                    x_final = x_resized.reshape(group_size, channels, self.config.resize_shape[0], self.config.resize_shape[1])
+                    batch[key] = x_final
+            batch["observation.images"] = torch.stack([batch[key] for key in self.config.image_features], dim=-4)
         # Note: It's important that this happens after stacking the images into a single key.
         self._queues = populate_queues(self._queues, batch)
 
@@ -148,9 +165,15 @@ class DiffusionPolicy(PreTrainedPolicy):
         batch = self.normalize_inputs(batch)
         if self.config.image_features:
             batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = torch.stack(
-                [batch[key] for key in self.config.image_features], dim=-4
-            )
+            if self.do_resize:   
+                for key in self.config.image_features:
+                    # print(f"{key}: {batch[key].shape}")
+                    batch_size, group_size, channels, old_h, old_w = batch[key].shape
+                    x_reshaped = batch[key].reshape(-1, old_h, old_w)
+                    x_resized = self.resize(x_reshaped)
+                    x_final = x_resized.reshape(batch_size, group_size, channels, self.config.resize_shape[0], self.config.resize_shape[1])
+                    batch[key] = x_final
+            batch["observation.images"] = torch.stack([batch[key] for key in self.config.image_features], dim=-4)
         batch = self.normalize_targets(batch)
         loss = self.diffusion.compute_loss(batch)
         # no output_dict so returning None
@@ -206,6 +229,8 @@ class DiffusionModel(nn.Module):
             self.num_inference_steps = self.noise_scheduler.config.num_train_timesteps
         else:
             self.num_inference_steps = config.num_inference_steps
+
+        
 
     # ========= inference  ============
     def conditional_sample(
@@ -458,6 +483,13 @@ class DiffusionRgbEncoder(nn.Module):
         else:
             self.do_crop = False
 
+
+        if config.resize_shape is not None:
+            self.do_resize = True
+            self.resize = torchvision.transforms.Resize(config.resize_shape)
+        else:
+            self.do_resize = False
+
         # Set up backbone.
         backbone_model = getattr(torchvision.models, config.vision_backbone)(
             weights=config.pretrained_backbone_weights
@@ -501,6 +533,11 @@ class DiffusionRgbEncoder(nn.Module):
             (B, D) image feature.
         """
         # Preprocess: maybe crop (if it was set up in the __init__).
+
+        if self.do_resize:
+            x = self.resize(x)
+        
+
         if self.do_crop:
             if self.training:  # noqa: SIM108
                 x = self.maybe_random_crop(x)

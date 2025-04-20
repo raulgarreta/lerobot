@@ -587,17 +587,11 @@ class So100WithKochRobotConfig(ManipulatorRobotConfig):
 
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
-            "laptop": OpenCVCameraConfig(
-                camera_index=0,
-                fps=30,
-                width=640,
-                height=480,
+            "front": OpenCVCameraConfig(
+                camera_index=1, fps=30, width=640, height=480, rotation=None
             ),
-            "phone": OpenCVCameraConfig(
-                camera_index=1,
-                fps=30,
-                width=640,
-                height=480,
+            "wrist": OpenCVCameraConfig(
+                camera_index=0, fps=30, width=640, height=480, rotation=None
             ),
         }
     )
@@ -749,10 +743,10 @@ class LeKiwiWithKochRobotConfig(LeKiwiRobotConfig):
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
             "front": OpenCVCameraConfig(
-                camera_index=1, fps=30, width=320, height=240, rotation=90
+                camera_index=1, fps=30, width=640, height=480, rotation=90
             ),
             "wrist": OpenCVCameraConfig(
-                camera_index=0, fps=30, width=320, height=240, rotation=None
+                camera_index=0, fps=30, width=640, height=480, rotation=None
             ),
         }
     )

@@ -125,6 +125,7 @@ class DiffusionConfig(PreTrainedConfig):
     vision_backbone: str = "resnet18"
     crop_shape: tuple[int, int] | None = (84, 84)
     crop_is_random: bool = True
+    resize_shape: tuple[int, int] | None = (480, 480)
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
@@ -217,12 +218,12 @@ class DiffusionConfig(PreTrainedConfig):
                     )
 
         # Check that all input images have the same shape.
-        first_image_key, first_image_ft = next(iter(self.image_features.items()))
-        for key, image_ft in self.image_features.items():
-            if image_ft.shape != first_image_ft.shape:
-                raise ValueError(
-                    f"`{key}` does not match `{first_image_key}`, but we expect all image shapes to match."
-                )
+        # first_image_key, first_image_ft = next(iter(self.image_features.items()))
+        # for key, image_ft in self.image_features.items():
+        #     if image_ft.shape != first_image_ft.shape:
+        #         raise ValueError(
+        #             f"`{key}` does not match `{first_image_key}`, but we expect all image shapes to match."
+        #         )
 
     @property
     def observation_delta_indices(self) -> list:

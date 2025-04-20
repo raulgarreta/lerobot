@@ -31,6 +31,7 @@ from lerobot.common.policies.tdmpc.configuration_tdmpc import TDMPCConfig
 from lerobot.common.policies.vqbet.configuration_vqbet import VQBeTConfig
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.types import FeatureType
+from lerobot.common.policies.dot.configuration_dot import DOTConfig
 
 
 def get_policy_class(name: str) -> PreTrainedPolicy:
@@ -59,6 +60,11 @@ def get_policy_class(name: str) -> PreTrainedPolicy:
         from lerobot.common.policies.pi0fast.modeling_pi0fast import PI0FASTPolicy
 
         return PI0FASTPolicy
+
+    elif name == "dot":
+        from lerobot.common.policies.dot.modeling_dot import DOTPolicy
+ 
+        return DOTPolicy
     else:
         raise NotImplementedError(f"Policy with name {name} is not implemented.")
 

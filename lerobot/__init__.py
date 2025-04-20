@@ -182,6 +182,8 @@ available_robots = [
     "aloha",
     "so100",
     "moss",
+    "so100_with_koch",
+    "lekiwi_with_koch",
 ]
 
 # lists all available cameras from `lerobot/common/robot_devices/cameras`
